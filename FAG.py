@@ -1,57 +1,35 @@
-import sys
-import os
+import requests
 
-# Автоматически ставим cloudscraper, если его нет в окружении Colab
+url = 'https://hdmn.cloud/ru/demo/'
+
 try:
-    import cloudscraper
-except ImportError:
-    os.system("pip install cloudscraper -q")
-    import cloudscraper
+    response = requests.get(url, timeout=10)
+    response.encoding = 'utf-8'
 
-def grab_code():
-    # Запрашиваем твою почту
-    email = input("Введи свою почту: ").strip()
-    if not email:
-        print("Почта не введена.")
-        return
+    if response.status_code == 200:
+        if 'Ваша электронная почта' in response.text:
+            email = input('📧 Введите электронную почту: ').strip()
 
-    # Создаем скрапер для обхода Cloudflare/защиты формы
-    scraper = cloudscraper.create_scraper(
-        browser={
-            'browser': 'chrome',
-            'platform': 'windows',
-            'desktop': True
-        }
-    )
+            try:
+                # Отправка формы на актуальный эндпоинт
+                res_post = requests.post(
+                    'https://hdmn.cloud/ru/demo/success/',
+                    data={'demo_mail': email},
+                    timeout=10
+                )
+                res_post.encoding = 'utf-8'
 
-    url = "https://hidemy.name/ru/demo/"
-    
-    headers = {
-        "Origin": "https://hidemy.name",
-        "Referer": "https://hidemy.name/ru/demo/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+                if res_post.status_code == 200 and 'Ваш код выслан на почту' in res_post.text:
+                    print('\033[1;32mВаш код уже в пути! Проверьте свой почтовый ящик.\033[0m')
+                else:
+                    print('\033[1;31mУказанная почта не подходит для получения тестового периода.\033[0m')
 
-    payload = {
-        "email": email,
-        "demo": "1"
-    }
-
-    print(f"Отправляем запрос для {email} через IP Google Colab...")
-
-    try:
-        response = scraper.post(url, data=payload, headers=headers, timeout=15)
-        
-        if response.status_code == 200:
-            if "Код выслан" in response.text or "success" in response.url or "проверьте" in response.text.lower():
-                print("УСПЕХ! Запрос ушел. Чекай письмо на почте.")
-            else:
-                print("Запрос прошел (200), но проверь ответы формы. Возможно, вылезла капча.")
+            except requests.RequestException as e:
+                print(f'\033[1;31mОшибка при отправке почты: {e}\033[0m')
         else:
-            print(f"Ошибка HTTP {response.status_code}. Возможно, IP заблокирован.")
+            print('\033[1;31mОтключитесь от среды выполнения и удалите её.\033[0m')
+    else:
+        print(f'\033[1;31mОшибка при запросе к странице. Код ответа: {response.status_code}\033[0m')
 
-    except Exception as e:
-        print(f"Сбой при отправке: {e}")
-
-if __name__ == "__main__":
-    grab_code()
+except requests.RequestException as e:
+        print(f'\033[1;31mОшибка при запросе к сайту: {e}\033[0m')
