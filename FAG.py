@@ -1,19 +1,23 @@
 import sys
 import re
-import asyncio
 import requests
 
 try:
     import ipywidgets as widgets
     from IPython.display import display, clear_output
+    import nest_asyncio
     from playwright.async_api import async_playwright
 except ImportError:
     import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets", "playwright"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets", "playwright", "nest_asyncio"])
     subprocess.check_call(["playwright", "install", "chromium", "--with-deps"])
     import ipywidgets as widgets
     from IPython.display import display, clear_output
+    import nest_asyncio
     from playwright.async_api import async_playwright
+
+# Разрешаем вложенный asyncio в Jupyter/Colab
+nest_asyncio.apply()
 
 BASE_URL = "https://hdmn.cloud"
 CONFIG_URL = "https://safeclick.email/faq/vpn/vpn-installation-and-configuration/third-party-applications/wireguard-for-windows/"
@@ -31,23 +35,23 @@ output_step1 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 code_input = widgets.Text(placeholder="Вставь код из письма", layout=widgets.Layout(width='280px'))
 version_select = widgets.Dropdown(
     options=[
-        ("AmneziaWG 2.0 (С обфускацией)", "2.0"),
-        ("AmneziaWG 1.0 (С обфускацией)", "1.0")
+        ("AmneziaWG 2.0 (С обфускацией)", "amnezia_2"),
+        ("AmneziaWG 1.0 (С обфускацией)", "amnezia_1")
     ],
-    value="2.0",
+    value="amnezia_2",
     layout=widgets.Layout(width='280px')
 )
 location_select = widgets.Dropdown(
     options=[
-        ("Hungary, Budapest DEMO", "Hungary"),
-        ("Belgium, Brussels DEMO", "Belgium"),
-        ("Greece, Thessaloniki DEMO", "Greece"),
-        ("Latvia, Riga DEMO", "Latvia"),
-        ("Netherlands, Amsterdam DEMO", "Netherlands"),
-        ("Slovenia, Ljubljana DEMO", "Slovenia"),
-        ("United Kingdom, London DEMO", "United Kingdom")
+        ("Hungary, Budapest DEMO", "hu"),
+        ("Belgium, Brussels DEMO", "be"),
+        ("Greece, Thessaloniki DEMO", "gr"),
+        ("Latvia, Riga DEMO", "lv"),
+        ("Netherlands, Amsterdam DEMO", "nl"),
+        ("Slovenia, Ljubljana DEMO", "si"),
+        ("United Kingdom, London DEMO", "gb")
     ],
-    value="Hungary",
+    value="hu",
     layout=widgets.Layout(width='280px')
 )
 btn_gen_config = widgets.Button(description="2. Создать конфиг", button_style="success", icon="key", layout=widgets.Layout(width='180px'))
@@ -74,60 +78,66 @@ def send_email_request(b):
             res.encoding = 'utf-8'
             html = res.text
 
-            # Углубленная проверка ответа сервера
             if "запрошен ранее" in html or "уже высылали" in html:
-                print("⚠️ Код на эту почту уже запрашивался ранее! Проверь ящик или возьми другую почту.")
+                print("⚠️ Код на эту почту уже запрашивался ранее!")
             elif "не подходит" in html or "одноразовые" in html:
-                print("❌ Данная почта не подходит для демо-периода (заблокирована сервисом).")
-            elif res.status_code == 200 and ("код" in html.lower() or "письмо" in html.lower() or "пути" in html.lower()):
-                print("✅ Код успешно отправлен! Проверь ящик и вставь код в Шаг 2.")
+                print("❌ Данная почта заблокирована сервисом.")
+            elif res.status_code == 200:
+                print("✅ Код отправлен! Проверь ящик.")
             else:
-                print("⚠️ Ответ сервера получен, но статуса успеха нет. Возможно, почта отклонена.")
-                
+                print(f"⚠️ Статус сервера: {res.status_code}")
         except Exception as e:
             print(f"❌ Ошибка сети: {e}")
 
-async def run_playwright_async(code, version, location):
-    print("🚀 Запускаем Headless Chromium (Playwright Async)...")
+async def run_browser_automation(code):
+    print("🚀 Запускаем браузер...")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(user_agent=HEADERS["User-Agent"])
+        page = await context.new_page()
 
-        print("⏳ Загружаем страницу генератора...")
-        await page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
+        try:
+            print("⏳ Открываем страницу генератора...")
+            await page.goto(CONFIG_URL, wait_until="domcontentloaded", timeout=20000)
 
-        print("⏳ Вводим код доступа...")
-        input_field = page.locator("input[placeholder*='Код'], input[type='text']").first
-        await input_field.fill(code)
+            print("⏳ Ищем поле ввода...")
+            # Находим первое доступное текстовое поле
+            input_elem = page.locator("input[type='text'], input:not([type])").first
+            await input_elem.fill(code)
 
-        btn_continue = page.locator("button:has-text('Продолжить'), a:has-text('Продолжить')").first
-        await btn_continue.click()
+            print("⏳ Нажимаем кнопку отправки кода...")
+            # Кликаем по любой кнопке рядом с инпутом или с типом submit
+            submit_btn = page.locator("button, input[type='submit']").first
+            await submit_btn.click()
 
-        print("⏳ Прохождение валидации (4 сек)...")
-        await asyncio.sleep(4)
+            print("⏳ Ожидание генерации (5 сек)...")
+            await page.wait_for_timeout(5000)
 
-        selects = page.locator("select")
-        if await selects.count() >= 2:
-            await selects.nth(0).select_option(label=re.compile(version, re.I))
-            await selects.nth(1).select_option(label=re.compile(location, re.I))
+            # Получаем весь текст страницы или содержимое textarea
+            content = await page.content()
+            textareas = page.locator("textarea")
 
-        print("⏳ Генерируем конфигурацию...")
-        btn_create = page.locator("button:has-text('Создать конфиг'), a:has-text('Создать конфиг')").first
-        await btn_create.click()
+            config_text = ""
+            if await textareas.count() > 0:
+                config_text = await textareas.first.input_value()
 
-        await asyncio.sleep(3)
+            if not config_text:
+                config_text = await page.evaluate("() => document.body.innerText")
 
-        config_box = page.locator("textarea").first
-        config_text = await config_box.input_value() or await config_box.inner_text()
+            if "[Interface]" in config_text or "PrivateKey" in config_text:
+                match = re.search(r"\[Interface\][\s\S]*?(?=\n\n|\Z|</textarea>)", config_text)
+                final_config = match.group(0) if match else config_text
+                final_config = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", final_config)
+                print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
+                print(final_config)
+            else:
+                print("❌ Не удалось найти конфиг в ответе страницы.")
+                print(f"Превью страницы: {config_text[:300]}...")
 
-        if "[Interface]" in config_text or "PrivateKey" in config_text:
-            config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", config_text)
-            print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
-            print(config_text)
-        else:
-            print("⚠️ Не удалось извлечь конфиг. Проверь код доступа.")
-
-        await browser.close()
+        except Exception as err:
+            print(f"❌ Ошибка во время работы браузера: {err}")
+        finally:
+            await browser.close()
 
 def generate_config_request(b):
     with output_step2:
@@ -137,11 +147,9 @@ def generate_config_request(b):
             print("❌ Введи код из письма!")
             return
 
-        try:
-            loop = asyncio.get_event_loop()
-            loop.create_task(run_playwright_async(code, version_select.value, location_select.value))
-        except Exception as e:
-            print(f"❌ Ошибка запуска задачи: {e}")
+        import asyncio
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(run_browser_automation(code))
 
 btn_send_email.on_click(send_email_request)
 btn_gen_config.on_click(generate_config_request)
