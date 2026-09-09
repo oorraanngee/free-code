@@ -4,7 +4,7 @@ import requests
 
 try:
     import ipywidgets as widgets
-    from IPython.display import display, clear_output
+    from IPython.display import display, HTML
     import nest_asyncio
     from playwright.async_api import async_playwright
 except ImportError:
@@ -12,7 +12,7 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets", "playwright", "nest_asyncio"])
     subprocess.check_call(["playwright", "install", "chromium", "--with-deps"])
     import ipywidgets as widgets
-    from IPython.display import display, clear_output
+    from IPython.display import display, HTML
     import nest_asyncio
     from playwright.async_api import async_playwright
 
@@ -60,7 +60,6 @@ output_step2 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 
 def send_email_request(b):
     with output_step1:
-        clear_output()
         email = email_input.value.strip()
         if not email:
             print("❌ Введи почту!")
@@ -122,31 +121,26 @@ async def run_browser_automation(code, version_val, location_val):
             print("⏳ Ожидаем прохождения проверки (5 сек)...")
             await page.wait_for_timeout(5000)
 
-            # Исправленный выбор опций из селектов
             selects = page.locator("select")
             if await selects.count() >= 2:
-                print(f"⚙️ Настраиваем конфиг ({version_val}, {location_val})...")
+                print(f"⚙️ Выбираем настройки: Версия={version_val}, Локация={location_val}...")
                 try:
-                    # Находим нужные option по частичному совпадению текста
                     s1 = selects.nth(0)
                     s2 = selects.nth(1)
 
-                    # Выбор версии
                     opts1 = await s1.locator("option").all_inner_texts()
                     for idx, text in enumerate(opts1):
                         if version_val.lower() in text.lower():
                             await s1.select_option(index=idx)
                             break
 
-                    # Выбор локации
                     opts2 = await s2.locator("option").all_inner_texts()
                     for idx, text in enumerate(opts2):
                         if location_val.lower() in text.lower():
                             await s2.select_option(index=idx)
                             break
-
                 except Exception as s_err:
-                    print(f"⚠️ Ошибка селекта: {s_err}")
+                    print(f"⚠️ Ошибка выпадающего списка: {s_err}")
 
             print("⏳ Генерируем конфиг...")
             btn_create = page.locator("button:has-text('Создать'), input[value*='Создать']").first
@@ -154,7 +148,6 @@ async def run_browser_automation(code, version_val, location_val):
                 await btn_create.click(force=True)
                 await page.wait_for_timeout(4000)
 
-            # Извлечение конфига
             config_text = ""
             textareas = page.locator("textarea")
             if await textareas.count() > 0:
@@ -163,33 +156,39 @@ async def run_browser_automation(code, version_val, location_val):
             if not config_text or "[Interface]" not in config_text:
                 config_text = await page.evaluate("() => document.body.innerText")
 
-            if "[Interface]" in config_text or "PrivateKey" in config_text:
-                match = re.search(r"\[Interface\][\s\S]*?(?=\n\n|\Z|</textarea>)", config_text)
-                final_config = match.group(0) if match else config_text
+            if "[Interface]" in config_text and "[Peer]" in config_text:
+                # Извлекаем полный конфиг от [Interface] до конца секции [Peer]
+                match = re.search(r"\[Interface\][\s\S]*?\[Peer\][\s\S]*?(?=\n\n\n|\Z|</textarea>)", config_text)
+                final_config = match.group(0).strip() if match else config_text.strip()
                 final_config = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", final_config)
 
-                # Вывод в удобном GUI-блоке
-                clear_output()
-                display(widgets.HTML("<b>🎉 ГОТОВЫЙ КОНФИГ:</b>"))
+                print("✅ Конфигурация успешно получена!")
                 
-                config_area = widgets.Textarea(
-                    value=final_config,
-                    rows=15,
-                    layout=widgets.Layout(width='98%', font_family='monospace')
-                )
-                display(config_area)
+                # HTML-блок с кнопкой копирования без очистки логов
+                html_code = f"""
+                <div style="margin-top: 15px; font-family: monospace;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: #282a36; padding: 8px 12px; border-radius: 6px 6px 0 0; color: #f8f8f2;">
+                        <b>🎉 ГОТОВЫЙ КОНФИГ:</b>
+                        <button onclick="navigator.clipboard.writeText(document.getElementById('config_text_area').value); this.innerText='✅ Скопировано!';" 
+                                style="background: #50fa7b; color: #282a36; border: none; padding: 5px 12px; border-radius: 4px; font-weight: bold; cursor: pointer;">
+                            📋 Скопировать
+                        </button>
+                    </div>
+                    <textarea id="config_text_area" rows="18" style="width: 100%; background: #1e1e2e; color: #a6adc8; border: 1px solid #44475a; border-radius: 0 0 6px 6px; padding: 10px; font-family: monospace; resize: vertical;">{final_config}</textarea>
+                </div>
+                """
+                display(HTML(html_code))
 
             else:
-                print("❌ Не удалось считать результат.")
+                print("❌ Конфиг не найден на странице.")
 
         except Exception as err:
-            print(f"❌ Ошибка: {err}")
+            print(f"❌ Ошибка Playwright: {err}")
         finally:
             await browser.close()
 
 def generate_config_request(b):
     with output_step2:
-        clear_output()
         code = code_input.value.strip()
         if not code:
             print("❌ Введи код из письма!")
