@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ключи HydeMy.Name</title>
+    <link rel="icon" href="/favicon.png" type="image/x-png">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f6f8;
+            color: #212529;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 35px;
+            border-radius: 8px;
+            border: 1px solid #e1e4e8;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            color: #1a1a1a;
+            font-size: 24px;
+            border-bottom: 2px solid #eaecef;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        h2 {
+            color: #0366d6;
+            font-size: 19px;
+            margin-top: 28px;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 6px;
+        }
+
+        p, li {
+            font-size: 15px;
+            color: #333333;
+        }
+
+        .warning-box {
+            background-color: #fff5f5;
+            border-left: 4px solid #e53e3e;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .info-box {
+            background-color: #f0f7ff;
+            border-left: 4px solid #0366d6;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        .code-block {
+            background: #f6f8fa;
+            border: 1px solid #d1d5da;
+            border-radius: 6px;
+            padding: 15px;
+            position: relative;
+            margin: 15px 0;
+        }
+
+        pre {
+            margin: 0;
+            font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 13px;
+            color: #24292e;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .btn-copy {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #2ea44f;
+            color: #ffffff;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .btn-copy:hover {
+            background: #2c974b;
+        }
+
+        .step-img {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #d1d5da;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+
+        ol {
+            padding-left: 22px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        b {
+            color: #111111;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Регистрация тестовых кодов HideMyName и генерация AmneziaWG</h1>
+    
+    <p>Сервис выдачи тестовых ключей ограничивает повторные запросы по IP-адресу. Чтобы обходить эти лимиты, используется среда <b>Google Colab</b>. Каждый запуск выделяет виртуальную машину с новым IP-адресом Google, что позволяет запрашивать коды без ограничений.</p>
+
+    <div class="warning-box">
+        <b style="color: #c53030;">Важно для защиты от бана аккаунта:</b><br>
+        Открывайте и запускайте скрипт <b>только</b> на встроенной странице <b>«Добро пожаловать в Colaboratory»</b>. Не сохраняйте блокнот на свой Google Диск (не нажимайте «Копировать на Диск»). Временная страница не сохраняется в вашем аккаунте и исключает возможность блокировок.
+    </div>
+
+    <h2>1. Подготовка страницы в Colab</h2>
+    <ol>
+        <li>Перейдите в <a href="https://colab.research.google.com/" target="_blank">Google Colaboratory</a>.</li>
+        <li>В появившемся окне откройте стандартный блокнот <b>«Welcome To Colaboratory» / «Добро пожаловать в Colaboratory»</b>.</li>
+        <li><b>Очистите блокнот от встроенных ячеек:</b> в верхнем меню выберите <b>Правка</b> ➔ <b>Удалить все ячейки</b> (или нажмите <code>Ctrl + M</code>, затем <code>A</code>).</li>
+        <li>Создайте одну чистую ячейку, нажав кнопку <b>«+ Код»</b> в левом верхнем углу.</li>
+    </ol>
+
+    <img src="img/step1_clear_cells.png" alt="Очистка ячеек в Colab" class="step-img">
+
+    <h2>2. Запуск скрипта</h2>
+    <ol>
+        <li>Скопируйте команду для загрузки и запуска:</li>
+    </ol>
+
+    <div class="code-block">
+        <button class="btn-copy" onclick="copyCode()">Скопировать</button>
+        <pre><code id="cmd_code">!rm -rf free-code
+!git clone -q https://github.com/oorraanngee/free-code.git 2>&1 >/dev/null
+%run free-code/FAG.py</code></pre>
+    </div>
+
+    <ol start="2">
+        <li>Вставьте команду в созданную ячейку и нажмите <b>Ctrl + Enter</b> (или кнопку Play слева от ячейки).</li>
+    </ol>
+
+    <div class="info-box">
+        <b>⏳ Время ожидания:</b> При первом запуске скрипт скачивает и настраивает Playwright и браузер Chromium. Загрузка занимает <b>около 1 минуты</b>. Пожалуйста, дождитесь появления интерфейса.
+    </div>
+
+    <h2>3. Шаг 1: Получение кода HideMyName</h2>
+    <ol>
+        <li>В поле <b>Шаг 1</b> введите любую почту и нажмите кнопку <b>📤 Запросить код</b>.</li>
+        <li>Перейдите в почтовый ящик и скопируйте полученный цифровой код.</li>
+        <li>Используйте его напрямую в официальном клиенте HideMyName для входа на 24 часа.</li>
+    </ol>
+
+    <img src="img/step2_interface.png" alt="Запрос кода" class="step-img">
+
+    <h2>4. Шаг 2: Генерация конфига AmneziaWG (Опционально)</h2>
+    <p>Если вам нужен готовый файл конфигурации с обфускацией вместо официального приложения:</p>
+    <ol>
+        <li>В поле <b>Шаг 2</b> вставьте код из письма.</li>
+        <li>Выберите версию AmneziaWG и сервер.</li>
+        <li>Нажмите кнопку <b>🔏 Создать конфиг</b>.</li>
+        <li>Через несколько секунд появится окно с готовым текстом конфига и кнопкой <b>Скопировать</b>.</li>
+    </ol>
+
+    <img src="img/step3_config.png" alt="Готовый конфиг" class="step-img">
+
+    <h2>5. Завершение работы</h2>
+    <div class="info-box">
+        Чтобы гарантированно сбросить IP и очистить виртуальную машину:
+        <ol style="margin-bottom: 0;">
+            <li>Нажмите значок корзины <b>🗑️</b> у рабочей ячейки.</li>
+            <li>Выберите в меню: <b>Среда выполнения</b> ➔ <b>Отключиться от среды выполнения и удалить её</b>.</li>
+        </ol>
+    </div>
+</div>
+
+<script>
+function copyCode() {
+    const codeText = document.getElementById('cmd_code').innerText;
+    navigator.clipboard.writeText(codeText);
+    const btn = document.querySelector('.btn-copy');
+    btn.innerText = 'Скопировано!';
+    setTimeout(() => { btn.innerText = 'Скопировать'; }, 2000);
+}
+</script>
+
+</body>
+</html>
