@@ -4,12 +4,12 @@ import requests
 
 try:
     import ipywidgets as widgets
-    from IPython.display import display, clear_output, HTML
+    from IPython.display import display, clear_output
 except ImportError:
     import subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets"])
     import ipywidgets as widgets
-    from IPython.display import display, clear_output, HTML
+    from IPython.display import display, clear_output
 
 # Основные параметры
 BASE_URL = "https://hdmn.cloud"
@@ -88,7 +88,6 @@ def generate_config_request(b):
 
         print("⏳ Подключаемся к серверу генерации конфига...")
         try:
-            # Отправка формы получения конфигурации
             payload = {
                 "code": code,
                 "preset": version_select.value,
@@ -121,7 +120,7 @@ btn_gen_config.on_click(generate_config_request)
 
 # --- ВЕРСТКА КРАСИВОГО ИНТЕРФЕЙСА ---
 
-header_html = HTML("""
+header_widget = widgets.HTML("""
 <div style="background-color: #1e1e2e; padding: 15px; border-radius: 8px; font-family: sans-serif; margin-bottom: 15px;">
     <h2 style="color: #cba6f7; margin: 0 0 5px 0;">🚀 FREE ACCESS GRABBER (FAG)</h2>
     <p style="color: #a6adc8; margin: 0; font-size: 13px;">Генератор конфигураций AmneziaWG / WireGuard</p>
@@ -129,17 +128,17 @@ header_html = HTML("""
 """)
 
 step1_box = widgets.VBox([
-    HTML("<b>Шаг 1: Запрос тестового кода</b>"),
+    widgets.HTML("<b>Шаг 1: Запрос тестового кода</b>"),
     widgets.HBox([email_input, btn_send_email])
 ], layout=widgets.Layout(padding='10px', border='1px solid #313244', border_radius='6px', margin='0 0 10px 0'))
 
 step2_box = widgets.VBox([
-    HTML("<b>Шаг 2: Сборка конфига AmneziaWG</b>"),
+    widgets.HTML("<b>Шаг 2: Сборка конфига AmneziaWG</b>"),
     widgets.HBox([code_input, version_select]),
     widgets.HBox([location_select, btn_gen_config])
 ], layout=widgets.Layout(padding='10px', border='1px solid #313244', border_radius='6px'))
 
-warning_html = HTML("""
+warning_widget = widgets.HTML("""
 <div style="background-color: #311b1b; border-left: 4px solid #f38ba8; padding: 10px 15px; border-radius: 4px; margin-top: 15px; font-family: sans-serif;">
     <b style="color: #f38ba8;">📌 Важное при завершении:</b>
     <ul style="color: #cdd6f4; margin: 5px 0 0 0; padding-left: 20px; font-size: 12px;">
@@ -150,4 +149,4 @@ warning_html = HTML("""
 """)
 
 # Отрисовка приложения
-display(header_html, step1_box, step2_box, output_area, warning_html)
+display(header_widget, step1_box, step2_box, output_area, warning_widget)
