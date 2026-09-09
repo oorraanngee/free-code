@@ -1,26 +1,25 @@
 import sys
 import re
+import time
 import requests
 
 try:
     import ipywidgets as widgets
     from IPython.display import display, clear_output
+    from playwright.sync_api import sync_playwright
 except ImportError:
     import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets", "playwright"])
+    subprocess.check_call(["playwright", "install", "chromium", "--with-deps"])
     import ipywidgets as widgets
     from IPython.display import display, clear_output
+    from playwright.sync_api import sync_playwright
 
 BASE_URL = "https://hdmn.cloud"
-# Настоящий Эндпоинт API HidemyName / Safeclick
-API_ENDPOINT = "https://safeclick.email/api/vpn_config.php"
+CONFIG_URL = "https://safeclick.email/faq/vpn/vpn-installation-and-configuration/third-party-applications/wireguard-for-windows/"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/javascript, */*; q=0.01",
-    "X-Requested-With": "XMLHttpRequest",
-    "Origin": "https://safeclick.email",
-    "Referer": "https://safeclick.email/faq/vpn/vpn-installation-and-configuration/third-party-applications/wireguard-for-windows/"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
 }
 
 # --- ИНТЕРФЕЙС ---
@@ -32,23 +31,23 @@ output_step1 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 code_input = widgets.Text(placeholder="Вставь код из письма", layout=widgets.Layout(width='280px'))
 version_select = widgets.Dropdown(
     options=[
-        ("AmneziaWG 2.0 (С обфускацией)", "amnezia2"),
-        ("AmneziaWG 1.0 (С обфускацией)", "amnezia1")
+        ("AmneziaWG 2.0 (С обфускацией)", "2.0"),
+        ("AmneziaWG 1.0 (С обфускацией)", "1.0")
     ],
-    value="amnezia2",
+    value="2.0",
     layout=widgets.Layout(width='280px')
 )
 location_select = widgets.Dropdown(
     options=[
-        ("Hungary, Budapest DEMO", "hu_bud_demo"),
-        ("Belgium, Brussels DEMO", "be_bru_demo"),
-        ("Greece, Thessaloniki DEMO", "gr_the_demo"),
-        ("Latvia, Riga DEMO", "lv_rig_demo"),
-        ("Netherlands, Amsterdam DEMO", "nl_ams_demo"),
-        ("Slovenia, Ljubljana DEMO", "si_lju_demo"),
-        ("United Kingdom, London DEMO", "gb_lon_demo")
+        ("Hungary, Budapest DEMO", "Hungary"),
+        ("Belgium, Brussels DEMO", "Belgium"),
+        ("Greece, Thessaloniki DEMO", "Greece"),
+        ("Latvia, Riga DEMO", "Latvia"),
+        ("Netherlands, Amsterdam DEMO", "Netherlands"),
+        ("Slovenia, Ljubljana DEMO", "Slovenia"),
+        ("United Kingdom, London DEMO", "United Kingdom")
     ],
-    value="hu_bud_demo",
+    value="Hungary",
     layout=widgets.Layout(width='280px')
 )
 btn_gen_config = widgets.Button(description="2. Создать конфиг", button_style="success", icon="key", layout=widgets.Layout(width='180px'))
@@ -74,9 +73,9 @@ def send_email_request(b):
             )
             res.encoding = 'utf-8'
             if res.status_code == 200:
-                print("✅ Код отправлен! Проверь почту и вставь его в Шаг 2.")
+                print("✅ Запрос отправлен! Проверь почту и скопируй код в Шаг 2.")
             else:
-                print(f"⚠️ Ответ сервера: {res.status_code}")
+                print(f"⚠️ Ошибка сервера: {res.status_code}")
         except Exception as e:
             print(f"❌ Ошибка сети: {e}")
 
@@ -88,45 +87,54 @@ def generate_config_request(b):
             print("❌ Введи код из письма!")
             return
 
-        session = requests.Session()
-        session.headers.update(HEADERS)
-
-        print("🔍 Запрос конфигурации через API backend...")
-        
-        # 1. Формируем параметры для прямого API
-        params = {
-            "code": code,
-            "server": location_select.value,
-            "type": version_select.value,
-            "format": "text"
-        }
-
+        print("🚀 Запускаем Headless Chromium (Playwright)...")
         try:
-            res = session.get(API_ENDPOINT, params=params, timeout=10)
-            res.encoding = 'utf-8'
-            
-            # Если прямой API вернул конфиг
-            if "[Interface]" in res.text:
-                config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", res.text)
-                print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
-                print(config_text)
-                return
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
 
-            # 2. Резервный метод: прямая генерация через hdmn.cloud API
-            print("⏳ Резервный канал (hdmn.cloud API)...")
-            alt_url = f"{BASE_URL}/api/vpn/wireguard/"
-            alt_res = session.post(alt_url, data={"code": code, "server": location_select.value}, timeout=10)
-            
-            if "[Interface]" in alt_res.text:
-                config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", alt_res.text)
-                print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
-                print(config_text)
-            else:
-                print("\n⚠️ Сервер требует прохождения валидации в браузере.")
-                print(f"Ответ API: {res.text[:200]}")
+                print("⏳ Загружаем страницу генератора...")
+                page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
+
+                print("⏳ Вводим код доступа...")
+                # Ввод кода в инпут
+                input_field = page.locator("input[placeholder*='Код'], input[type='text']").first
+                input_field.fill(code)
+
+                # Нажатие на кнопку "Продолжить"
+                btn_continue = page.locator("button:has-text('Продолжить'), a:has-text('Продолжить')").first
+                btn_continue.click()
+
+                print("⏳ Выполняем JS-валидацию (4 сек)...")
+                time.sleep(4)
+
+                # Выбор элементов из Dropdown, если они появились
+                selects = page.locator("select")
+                if selects.count() >= 2:
+                    selects.nth(0).select_option(label=re.compile(version_select.value, re.I))
+                    selects.nth(1).select_option(label=re.compile(location_select.value, re.I))
+
+                print("⏳ Нажимаем «Создать конфиг»...")
+                btn_create = page.locator("button:has-text('Создать конфиг'), a:has-text('Создать конфиг')").first
+                btn_create.click()
+
+                time.sleep(3)
+
+                # Достаем результат из textarea или предпросмотра
+                config_box = page.locator("textarea").first
+                config_text = config_box.input_value() or config_box.inner_text()
+
+                if "[Interface]" in config_text or "PrivateKey" in config_text:
+                    config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", config_text)
+                    print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
+                    print(config_text)
+                else:
+                    print("⚠️ Не удалось получить конфиг из формы. Проверь код.")
+
+                browser.close()
 
         except Exception as e:
-            print(f"❌ Ошибка при запросе: {e}")
+            print(f"❌ Ошибка Playwright: {e}")
 
 btn_send_email.on_click(send_email_request)
 btn_gen_config.on_click(generate_config_request)
