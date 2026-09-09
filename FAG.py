@@ -27,22 +27,22 @@ HEADERS = {
 
 # --- ИНТЕРФЕЙС ---
 
-email_input = widgets.Text(placeholder="vash_mail@gmail.com", layout=widgets.Layout(width='280px'))
-btn_send_email = widgets.Button(description="1. Запросить код", button_style="primary", icon="paper-plane", layout=widgets.Layout(width='180px'))
+email_input = widgets.Text(placeholder="ваша почта", layout=widgets.Layout(width='280px'))
+btn_send_email = widgets.Button(description="📤 Запросить код", button_style="primary", icon="paper-plane", layout=widgets.Layout(width='180px'))
 output_step1 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 
 code_input = widgets.Text(placeholder="Вставь код из письма", layout=widgets.Layout(width='280px'))
 version_select = widgets.Dropdown(
     options=[
-        ("AmneziaWG 2.0 (С обфускацией)", "2.0"),
-        ("AmneziaWG 1.0 (С обфускацией)", "1.0")
+        ("AmneziaWG 2.0 (рекомендуется)", "2.0"),
+        ("AmneziaWG 1.0", "1.0")
     ],
     value="2.0",
     layout=widgets.Layout(width='280px')
 )
 location_select = widgets.Dropdown(
     options=[
-        ("Hungary, Budapest DEMO", "Hungary"),
+        ("Hungary, Budapest DEMO (рекомендуется)", "Hungary"),
         ("Belgium, Brussels DEMO", "Belgium"),
         ("Greece, Thessaloniki DEMO", "Greece"),
         ("Latvia, Riga DEMO", "Latvia"),
@@ -53,7 +53,7 @@ location_select = widgets.Dropdown(
     value="Hungary",
     layout=widgets.Layout(width='280px')
 )
-btn_gen_config = widgets.Button(description="2. Создать конфиг", button_style="success", icon="key", layout=widgets.Layout(width='180px'))
+btn_gen_config = widgets.Button(description="🔏 Создать конфиг", button_style="success", icon="key", layout=widgets.Layout(width='180px'))
 output_step2 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 
 # --- ЛОГИКА ---
@@ -62,10 +62,10 @@ def send_email_request(b):
     with output_step1:
         email = email_input.value.strip()
         if not email:
-            print("❌ Введи почту!")
+            print("📭 Введите почту!")
             return
         
-        print("⏳ Отправляем запрос на получение кода...")
+        print("📨 Отправляем запрос на получение кода...")
         try:
             res = requests.post(
                 f"{BASE_URL}/ru/demo/success/",
@@ -77,25 +77,25 @@ def send_email_request(b):
             html = res.text
 
             if "запрошен ранее" in html or "уже высылали" in html:
-                print("⚠️ Код на эту почту уже запрашивался ранее!")
+                print("📛 Код на эту почту уже запрашивался ранее!")
             elif "не подходит" in html or "одноразовые" in html:
-                print("❌ Данная почта заблокирована сервисом.")
+                print("⛔ Данная почта заблокирована сервисом.")
             elif res.status_code == 200:
-                print("✅ Код отправлен! Проверь ящик.")
+                print("📬 Код отправлен! Проверь ящик.")
             else:
                 print(f"⚠️ Статус сервера: {res.status_code}")
         except Exception as e:
-            print(f"❌ Ошибка сети: {e}")
+            print(f"🌐❌ Ошибка сети: {e}")
 
 async def run_browser_automation(code, version_val, location_val):
-    print("🚀 Запускаем Headless Chromium...")
+    print("🌐 Запускаем Headless Chromium...")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(user_agent=HEADERS["User-Agent"])
         page = await context.new_page()
 
         try:
-            print("⏳ Загружаем страницу...")
+            print("⏬ Загружаем страницу...")
             await page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
 
             print("🔓 Раскрываем вкладку «Основной этап»...")
@@ -104,14 +104,14 @@ async def run_browser_automation(code, version_val, location_val):
                 await tab_accordion.click()
                 await page.wait_for_timeout(1000)
 
-            print("⏳ Вводим код доступа...")
+            print("🪪 Вводим код...")
             input_field = page.locator("input[name='code'], input[placeholder*='Код доступа']").first
             if not await input_field.is_visible():
                 await input_field.evaluate(f"(el) => {{ el.value = '{code}'; el.dispatchEvent(new Event('input')); }}")
             else:
                 await input_field.fill(code)
 
-            print("⏳ Нажимаем «Продолжить»...")
+            print("🔹 Нажимаем «Продолжить»...")
             btn_continue = page.locator("button:has-text('Продолжить'), input[value*='Продолжить'], a:has-text('Продолжить')").first
             if await btn_continue.count() > 0:
                 await btn_continue.click(force=True)
@@ -123,7 +123,7 @@ async def run_browser_automation(code, version_val, location_val):
 
             selects = page.locator("select")
             if await selects.count() >= 2:
-                print(f"⚙️ Выбираем настройки: Версия={version_val}, Локация={location_val}...")
+                print(f"⚙️ Выбираем настройки: Версия = {version_val}, Сервер = {location_val}...")
                 try:
                     s1 = selects.nth(0)
                     s2 = selects.nth(1)
@@ -142,7 +142,7 @@ async def run_browser_automation(code, version_val, location_val):
                 except Exception as s_err:
                     print(f"⚠️ Ошибка выпадающего списка: {s_err}")
 
-            print("⏳ Генерируем конфиг...")
+            print("🔏 Генерируем конфиг...")
             btn_create = page.locator("button:has-text('Создать'), input[value*='Создать']").first
             if await btn_create.count() > 0:
                 await btn_create.click(force=True)
@@ -162,13 +162,13 @@ async def run_browser_automation(code, version_val, location_val):
                 final_config = match.group(0).strip() if match else config_text.strip()
                 final_config = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", final_config)
 
-                print("✅ Конфигурация успешно получена!")
+                print("🔐 Конфигурация успешно получена!")
                 
                 # HTML-блок с кнопкой копирования без очистки логов
                 html_code = f"""
                 <div style="margin-top: 15px; font-family: monospace;">
                     <div style="display: flex; justify-content: space-between; align-items: center; background: #282a36; padding: 8px 12px; border-radius: 6px 6px 0 0; color: #f8f8f2;">
-                        <b>🎉 ГОТОВЫЙ КОНФИГ:</b>
+                        <b>🔒🔑 ГОТОВЫЙ КОНФИГ:</b>
                         <button onclick="navigator.clipboard.writeText(document.getElementById('config_text_area').value); this.innerText='✅ Скопировано!';" 
                                 style="background: #50fa7b; color: #282a36; border: none; padding: 5px 12px; border-radius: 4px; font-weight: bold; cursor: pointer;">
                             📋 Скопировать
@@ -180,7 +180,7 @@ async def run_browser_automation(code, version_val, location_val):
                 display(HTML(html_code))
 
             else:
-                print("❌ Конфиг не найден на странице.")
+                print("🔍 Конфиг не найден на странице.")
 
         except Exception as err:
             print(f"❌ Ошибка Playwright: {err}")
@@ -209,8 +209,8 @@ btn_gen_config.on_click(generate_config_request)
 
 header_widget = widgets.HTML("""
 <div style="background-color: #1e1e2e; padding: 15px; border-radius: 8px; font-family: sans-serif; margin-bottom: 15px;">
-    <h2 style="color: #cba6f7; margin: 0 0 5px 0;">🚀 FREE ACCESS GRABBER (FAG)</h2>
-    <p style="color: #a6adc8; margin: 0; font-size: 13px;">Генератор конфигураций AmneziaWG / WireGuard</p>
+    <h2 style="color: #cba6f7; margin: 0 0 5px 0;">📨 FREE ACCESS GRABBER (FAG)</h2>
+    <p style="color: #a6adc8; margin: 0; font-size: 13px;">А так же: генератор конфигураций AmneziaWG</p>
 </div>
 """)
 
@@ -231,8 +231,8 @@ warning_widget = widgets.HTML("""
 <div style="background-color: #311b1b; border-left: 4px solid #f38ba8; padding: 10px 15px; border-radius: 4px; margin-top: 15px; font-family: sans-serif;">
     <b style="color: #f38ba8;">📌 Важно при завершении:</b>
     <ul style="color: #cdd6f4; margin: 5px 0 0 0; padding-left: 20px; font-size: 12px;">
-        <li>Нажми иконку корзины <b>🗑️</b> у ячейки.</li>
-        <li>Выбери: <b>Среда выполнения 🡢 Отключиться от среды выполнения и удалить её</b>.</li>
+        <li>Нажмите иконку корзины <b>🗑️</b> у ячейки.</li>
+        <li>Выберите: <b>Среда выполнения 🡢 Отключиться от среды выполнения и удалить её</b>.</li>
     </ul>
 </div>
 """)
