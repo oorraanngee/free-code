@@ -1,6 +1,5 @@
 import sys
 import re
-import time
 import requests
 
 try:
@@ -16,12 +15,13 @@ BASE_URL = "https://hdmn.cloud"
 CONFIG_URL = "https://safeclick.email/faq/vpn/vpn-installation-and-configuration/third-party-applications/wireguard-for-windows/"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Origin": "https://safeclick.email",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     "Referer": CONFIG_URL
 }
 
-# --- ЭЛЕМЕНТЫ ИНТЕРФЕЙСА ---
+# --- ИНТЕРФЕЙС ---
 
 # Шаг 1
 email_input = widgets.Text(placeholder="vash_mail@gmail.com", layout=widgets.Layout(width='280px'))
@@ -73,6 +73,7 @@ def send_email_request(b):
                 timeout=10
             )
             res.encoding = 'utf-8'
+            print(f"🔹 Статус ответа сервера: {res.status_code}")
             if res.status_code == 200:
                 print("✅ Запрос отправлен! Проверь почту и скопируй код в Шаг 2.")
             else:
@@ -91,53 +92,75 @@ def generate_config_request(b):
         session = requests.Session()
         session.headers.update(HEADERS)
 
-        print("⏳ Шаг 1/2: Авторизация кода на сервере...")
+        print("🔍 [DEBUG] 1. Загружаем страницу генератора...")
         try:
-            # 1. Отправка кода доступа (эмуляция нажатия «Продолжить»)
-            check_res = session.post(
-                CONFIG_URL,
-                data={"code": code, "submit_code": "1"},
-                timeout=10
-            )
-            
-            print("⏳ Пауза 3 сек (ожидание обработки кода)...")
-            time.sleep(3)
+            get_res = session.get(CONFIG_URL, timeout=10)
+            get_res.encoding = 'utf-8'
+            print(f"🔹 HTML загружен. Статус: {get_res.status_code}")
 
-            print("⏳ Шаг 2/2: Запрос генерации конфига...")
-            # 2. Запрос конфига с выбором локации и версии
-            gen_data = {
-                "code": code,
-                "preset": version_select.value,
-                "server": location_select.value,
-                "action": "generate"
-            }
+            # Парсим все скрытые input поля на странице
+            hidden_inputs = re.findall(r'<input[^>]*type=["\']hidden["\'][^>]*>', get_res.text)
+            form_data = {}
+            for inp in hidden_inputs:
+                name_match = re.search(r'name=["\']([^"\']+)["\']', inp)
+                val_match = re.search(r'value=["\']([^"\']*)["\']', inp)
+                if name_match:
+                    name = name_match.group(1)
+                    val = val_match.group(1) if val_match else ""
+                    form_data[name] = val
             
-            gen_res = session.post(CONFIG_URL, data=gen_data, timeout=10)
-            gen_res.encoding = 'utf-8'
+            print(f"🔹 Найденные скрытые токены формы: {form_data}")
 
-            # Поиск конфига в ответе
-            text = gen_res.text
-            match = re.search(r"\[Interface\][\s\S]*?(?=\n\n|\Z|</textarea>)", text)
+            # Ищем правильное имя поля для ввода кода
+            code_input_name = "code"
+            input_matches = re.findall(r'<input[^>]*name=["\']([^"\']+)["\'][^>]*>', get_res.text)
+            for name in input_matches:
+                if "code" in name.lower() or "demo" in name.lower() or "key" in name.lower():
+                    code_input_name = name
+                    break
+
+            print(f"🔹 Используем имя поля для кода: '{code_input_name}'")
             
-            if match:
-                config_text = match.group(0)
+            # Собираем финальный набор данных для отправки
+            form_data[code_input_name] = code
+            form_data["preset"] = version_select.value
+            form_data["server"] = location_select.value
+
+            print("🔍 [DEBUG] 2. Отправляем заполненную форму на сервер...")
+            post_res = session.post(CONFIG_URL, data=form_data, timeout=12)
+            post_res.encoding = 'utf-8'
+
+            print(f"🔹 Статус ответа после POST: {post_res.status_code}")
+            print(f"🔹 Заголовки ответа Content-Type: {post_res.headers.get('Content-Type')}")
+
+            raw_text = post_res.text
+
+            # Проверка наличия файла конфигурации
+            if "[Interface]" in raw_text or "PrivateKey" in raw_text:
+                config_text = raw_text
+                # Если ответ обернут в HTML/Textarea, вырезаем чистый конфиг
+                match = re.search(r"\[Interface\][\s\S]*?(?=\n\n|\Z|</textarea>)", raw_text)
+                if match:
+                    config_text = match.group(0)
+
                 config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", config_text)
-                print("🎉 ГОТОВЫЙ КОНФИГ:\n")
+                print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
                 print(config_text)
-            elif "[Interface]" in text:
-                text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", text)
-                print("🎉 ГОТОВЫЙ КОНФИГ:\n")
-                print(text)
             else:
-                print("⚠️ Не удалось извлечь конфиг. Проверь верность кода.")
-                
+                print("\n❌ [ОШИБКА GENERATION] Конфиг не найден в ответе!")
+                print("--- ПЕРВЫЕ 600 СИМВОЛОВ ОТВЕТА СЕРВЕРА ---")
+                # Очищаем от лишних пробелов для читаемости
+                clean_preview = re.sub(r'\s+', ' ', raw_text[:600])
+                print(clean_preview)
+                print("---------------------------------------")
+
         except Exception as e:
-            print(f"❌ Ошибка выполнения: {e}")
+            print(f"❌ Критическая ошибка: {e}")
 
 btn_send_email.on_click(send_email_request)
 btn_gen_config.on_click(generate_config_request)
 
-# --- СБОРКА ИНТЕРФЕЙСА ---
+# --- ИНТЕРФЕЙС ---
 
 header_widget = widgets.HTML("""
 <div style="background-color: #1e1e2e; padding: 15px; border-radius: 8px; font-family: sans-serif; margin-bottom: 15px;">
