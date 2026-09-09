@@ -96,47 +96,53 @@ async def run_browser_automation(code, version_val, location_val):
         page = await context.new_page()
 
         try:
-            print("⏳ Загружаем страницу инструкций...")
+            print("⏳ Загружаем страницу...")
             await page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
 
-            # Точный поиск инпута кода доступа (исключаем строку поиска сайта)
-            print("⏳ Ищем поле ввода кода доступа...")
-            input_field = page.locator("input[placeholder*='код' i], input[placeholder*='code' i], input[name*='code' i]").first
-            
-            if await input_field.count() == 0:
-                # Если с фолбэком — берем инпут, у которого рядом есть кнопка "Продолжить" / "Далее"
-                input_field = page.locator("form input[type='text'], .content input[type='text']").first
+            print("🔓 Раскрываем вкладку «Основной этап»...")
+            # Ищем спойлер / аккордеон по тексту и кликаем
+            tab_accordion = page.locator("text=/Основной этап/i").first
+            if await tab_accordion.count() > 0:
+                await tab_accordion.click()
+                await page.wait_for_timeout(1000)
 
-            await input_field.fill(code)
+            print("⏳ Ищем поле ввода кода...")
+            input_field = page.locator("input[name='code'], input[placeholder*='Код доступа']").first
+            
+            # Если элемент всё ещё скрыт, заполняем через JS без проверки видимости
+            if not await input_field.is_visible():
+                print("⚠️ Поле скрыто, форсируем ввод через JS...")
+                await input_field.evaluate(f"(el) => {{ el.value = '{code}'; el.dispatchEvent(new Event('input')); }}")
+            else:
+                await input_field.fill(code)
 
             print("⏳ Нажимаем «Продолжить»...")
-            btn_continue = page.locator("button:has-text('Продолжить'), input[value*='Продолжить']").first
+            btn_continue = page.locator("button:has-text('Продолжить'), input[value*='Продолжить'], a:has-text('Продолжить')").first
             if await btn_continue.count() > 0:
-                await btn_continue.click()
+                await btn_continue.click(force=True)
             else:
-                # Нажимаем Enter в поле
                 await input_field.press("Enter")
 
-            print("⏳ Ожидание прохождения проверки / загрузки параметров (5 сек)...")
+            print("⏳ Ожидаем прохождения проверки (5 сек)...")
             await page.wait_for_timeout(5000)
 
-            # Селекты версии и локации
+            # Выбор настроек (версия и сервер)
             selects = page.locator("select")
             if await selects.count() >= 2:
-                print(f"⚙️ Выбираем версию ({version_val}) и локацию ({location_val})...")
+                print(f"⚙️ Настраиваем конфиг ({version_val}, {location_val})...")
                 try:
                     await selects.nth(0).select_option(label=re.compile(version_val, re.I))
                     await selects.nth(1).select_option(label=re.compile(location_val, re.I))
                 except Exception as s_err:
-                    print(f"⚠️ Ошибка при выборе из списка (используем по умолчанию): {s_err}")
+                    print(f"⚠️ Ошибка селекта: {s_err}")
 
-            print("⏳ Нажимаем «Создать конфиг»...")
+            print("⏳ Генерируем конфиг...")
             btn_create = page.locator("button:has-text('Создать'), input[value*='Создать']").first
             if await btn_create.count() > 0:
-                await btn_create.click()
+                await btn_create.click(force=True)
                 await page.wait_for_timeout(4000)
 
-            # Пробуем вытащить конфиг из textarea или из блока кода
+            # Извлечение конфига
             config_text = ""
             textareas = page.locator("textarea")
             if await textareas.count() > 0:
@@ -145,9 +151,6 @@ async def run_browser_automation(code, version_val, location_val):
             if not config_text or "[Interface]" not in config_text:
                 config_text = await page.evaluate("() => document.body.innerText")
 
-            # Делаем скриншот для отладки
-            await page.screenshot(path="debug_page.png")
-
             if "[Interface]" in config_text or "PrivateKey" in config_text:
                 match = re.search(r"\[Interface\][\s\S]*?(?=\n\n|\Z|</textarea>)", config_text)
                 final_config = match.group(0) if match else config_text
@@ -155,11 +158,12 @@ async def run_browser_automation(code, version_val, location_val):
                 print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
                 print(final_config)
             else:
-                print("❌ Конфиг не найден в теле страницы.")
-                print("📸 Скриншот сохранен в файлы Colab (`debug_page.png`).")
+                print("❌ Не удалось считать результат.")
+                await page.screenshot(path="debug_page.png")
+                print("📸 Скриншот сохранен в `debug_page.png`.")
 
         except Exception as err:
-            print(f"❌ Ошибка Playwright: {err}")
+            print(f"❌ Ошибка: {err}")
             await page.screenshot(path="debug_error.png")
         finally:
             await browser.close()
