@@ -16,7 +16,6 @@ except ImportError:
     import nest_asyncio
     from playwright.async_api import async_playwright
 
-# Разрешаем вложенный asyncio в Jupyter/Colab
 nest_asyncio.apply()
 
 BASE_URL = "https://hdmn.cloud"
@@ -35,23 +34,23 @@ output_step1 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 code_input = widgets.Text(placeholder="Вставь код из письма", layout=widgets.Layout(width='280px'))
 version_select = widgets.Dropdown(
     options=[
-        ("AmneziaWG 2.0 (С обфускацией)", "amnezia_2"),
-        ("AmneziaWG 1.0 (С обфускацией)", "amnezia_1")
+        ("AmneziaWG 2.0 (С обфускацией)", "2.0"),
+        ("AmneziaWG 1.0 (С обфускацией)", "1.0")
     ],
-    value="amnezia_2",
+    value="2.0",
     layout=widgets.Layout(width='280px')
 )
 location_select = widgets.Dropdown(
     options=[
-        ("Hungary, Budapest DEMO", "hu"),
-        ("Belgium, Brussels DEMO", "be"),
-        ("Greece, Thessaloniki DEMO", "gr"),
-        ("Latvia, Riga DEMO", "lv"),
-        ("Netherlands, Amsterdam DEMO", "nl"),
-        ("Slovenia, Ljubljana DEMO", "si"),
-        ("United Kingdom, London DEMO", "gb")
+        ("Hungary, Budapest DEMO", "Hungary"),
+        ("Belgium, Brussels DEMO", "Belgium"),
+        ("Greece, Thessaloniki DEMO", "Greece"),
+        ("Latvia, Riga DEMO", "Latvia"),
+        ("Netherlands, Amsterdam DEMO", "Netherlands"),
+        ("Slovenia, Ljubljana DEMO", "Slovenia"),
+        ("United Kingdom, London DEMO", "United Kingdom")
     ],
-    value="hu",
+    value="Hungary",
     layout=widgets.Layout(width='280px')
 )
 btn_gen_config = widgets.Button(description="2. Создать конфиг", button_style="success", icon="key", layout=widgets.Layout(width='180px'))
@@ -89,40 +88,65 @@ def send_email_request(b):
         except Exception as e:
             print(f"❌ Ошибка сети: {e}")
 
-async def run_browser_automation(code):
-    print("🚀 Запускаем браузер...")
+async def run_browser_automation(code, version_val, location_val):
+    print("🚀 Запускаем Headless Chromium...")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(user_agent=HEADERS["User-Agent"])
         page = await context.new_page()
 
         try:
-            print("⏳ Открываем страницу генератора...")
-            await page.goto(CONFIG_URL, wait_until="domcontentloaded", timeout=20000)
+            print("⏳ Загружаем страницу инструкций...")
+            await page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
 
-            print("⏳ Ищем поле ввода...")
-            # Находим первое доступное текстовое поле
-            input_elem = page.locator("input[type='text'], input:not([type])").first
-            await input_elem.fill(code)
+            # Точный поиск инпута кода доступа (исключаем строку поиска сайта)
+            print("⏳ Ищем поле ввода кода доступа...")
+            input_field = page.locator("input[placeholder*='код' i], input[placeholder*='code' i], input[name*='code' i]").first
+            
+            if await input_field.count() == 0:
+                # Если с фолбэком — берем инпут, у которого рядом есть кнопка "Продолжить" / "Далее"
+                input_field = page.locator("form input[type='text'], .content input[type='text']").first
 
-            print("⏳ Нажимаем кнопку отправки кода...")
-            # Кликаем по любой кнопке рядом с инпутом или с типом submit
-            submit_btn = page.locator("button, input[type='submit']").first
-            await submit_btn.click()
+            await input_field.fill(code)
 
-            print("⏳ Ожидание генерации (5 сек)...")
+            print("⏳ Нажимаем «Продолжить»...")
+            btn_continue = page.locator("button:has-text('Продолжить'), input[value*='Продолжить']").first
+            if await btn_continue.count() > 0:
+                await btn_continue.click()
+            else:
+                # Нажимаем Enter в поле
+                await input_field.press("Enter")
+
+            print("⏳ Ожидание прохождения проверки / загрузки параметров (5 сек)...")
             await page.wait_for_timeout(5000)
 
-            # Получаем весь текст страницы или содержимое textarea
-            content = await page.content()
-            textareas = page.locator("textarea")
+            # Селекты версии и локации
+            selects = page.locator("select")
+            if await selects.count() >= 2:
+                print(f"⚙️ Выбираем версию ({version_val}) и локацию ({location_val})...")
+                try:
+                    await selects.nth(0).select_option(label=re.compile(version_val, re.I))
+                    await selects.nth(1).select_option(label=re.compile(location_val, re.I))
+                except Exception as s_err:
+                    print(f"⚠️ Ошибка при выборе из списка (используем по умолчанию): {s_err}")
 
+            print("⏳ Нажимаем «Создать конфиг»...")
+            btn_create = page.locator("button:has-text('Создать'), input[value*='Создать']").first
+            if await btn_create.count() > 0:
+                await btn_create.click()
+                await page.wait_for_timeout(4000)
+
+            # Пробуем вытащить конфиг из textarea или из блока кода
             config_text = ""
+            textareas = page.locator("textarea")
             if await textareas.count() > 0:
-                config_text = await textareas.first.input_value()
+                config_text = await textareas.first.input_value() or await textareas.first.inner_text()
 
-            if not config_text:
+            if not config_text or "[Interface]" not in config_text:
                 config_text = await page.evaluate("() => document.body.innerText")
+
+            # Делаем скриншот для отладки
+            await page.screenshot(path="debug_page.png")
 
             if "[Interface]" in config_text or "PrivateKey" in config_text:
                 match = re.search(r"\[Interface\][\s\S]*?(?=\n\n|\Z|</textarea>)", config_text)
@@ -131,11 +155,12 @@ async def run_browser_automation(code):
                 print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
                 print(final_config)
             else:
-                print("❌ Не удалось найти конфиг в ответе страницы.")
-                print(f"Превью страницы: {config_text[:300]}...")
+                print("❌ Конфиг не найден в теле страницы.")
+                print("📸 Скриншот сохранен в файлы Colab (`debug_page.png`).")
 
         except Exception as err:
-            print(f"❌ Ошибка во время работы браузера: {err}")
+            print(f"❌ Ошибка Playwright: {err}")
+            await page.screenshot(path="debug_error.png")
         finally:
             await browser.close()
 
@@ -149,7 +174,11 @@ def generate_config_request(b):
 
         import asyncio
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(run_browser_automation(code))
+        loop.run_until_complete(run_browser_automation(
+            code, 
+            version_select.value, 
+            location_select.value
+        ))
 
 btn_send_email.on_click(send_email_request)
 btn_gen_config.on_click(generate_config_request)
