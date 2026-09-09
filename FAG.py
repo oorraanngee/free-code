@@ -100,18 +100,14 @@ async def run_browser_automation(code, version_val, location_val):
             await page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
 
             print("🔓 Раскрываем вкладку «Основной этап»...")
-            # Ищем спойлер / аккордеон по тексту и кликаем
             tab_accordion = page.locator("text=/Основной этап/i").first
             if await tab_accordion.count() > 0:
                 await tab_accordion.click()
                 await page.wait_for_timeout(1000)
 
-            print("⏳ Ищем поле ввода кода...")
+            print("⏳ Вводим код доступа...")
             input_field = page.locator("input[name='code'], input[placeholder*='Код доступа']").first
-            
-            # Если элемент всё ещё скрыт, заполняем через JS без проверки видимости
             if not await input_field.is_visible():
-                print("⚠️ Поле скрыто, форсируем ввод через JS...")
                 await input_field.evaluate(f"(el) => {{ el.value = '{code}'; el.dispatchEvent(new Event('input')); }}")
             else:
                 await input_field.fill(code)
@@ -126,13 +122,29 @@ async def run_browser_automation(code, version_val, location_val):
             print("⏳ Ожидаем прохождения проверки (5 сек)...")
             await page.wait_for_timeout(5000)
 
-            # Выбор настроек (версия и сервер)
+            # Исправленный выбор опций из селектов
             selects = page.locator("select")
             if await selects.count() >= 2:
                 print(f"⚙️ Настраиваем конфиг ({version_val}, {location_val})...")
                 try:
-                    await selects.nth(0).select_option(label=re.compile(version_val, re.I))
-                    await selects.nth(1).select_option(label=re.compile(location_val, re.I))
+                    # Находим нужные option по частичному совпадению текста
+                    s1 = selects.nth(0)
+                    s2 = selects.nth(1)
+
+                    # Выбор версии
+                    opts1 = await s1.locator("option").all_inner_texts()
+                    for idx, text in enumerate(opts1):
+                        if version_val.lower() in text.lower():
+                            await s1.select_option(index=idx)
+                            break
+
+                    # Выбор локации
+                    opts2 = await s2.locator("option").all_inner_texts()
+                    for idx, text in enumerate(opts2):
+                        if location_val.lower() in text.lower():
+                            await s2.select_option(index=idx)
+                            break
+
                 except Exception as s_err:
                     print(f"⚠️ Ошибка селекта: {s_err}")
 
@@ -155,16 +167,23 @@ async def run_browser_automation(code, version_val, location_val):
                 match = re.search(r"\[Interface\][\s\S]*?(?=\n\n|\Z|</textarea>)", config_text)
                 final_config = match.group(0) if match else config_text
                 final_config = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", final_config)
-                print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
-                print(final_config)
+
+                # Вывод в удобном GUI-блоке
+                clear_output()
+                display(widgets.HTML("<b>🎉 ГОТОВЫЙ КОНФИГ:</b>"))
+                
+                config_area = widgets.Textarea(
+                    value=final_config,
+                    rows=15,
+                    layout=widgets.Layout(width='98%', font_family='monospace')
+                )
+                display(config_area)
+
             else:
                 print("❌ Не удалось считать результат.")
-                await page.screenshot(path="debug_page.png")
-                print("📸 Скриншот сохранен в `debug_page.png`.")
 
         except Exception as err:
             print(f"❌ Ошибка: {err}")
-            await page.screenshot(path="debug_error.png")
         finally:
             await browser.close()
 
