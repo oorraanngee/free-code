@@ -1,19 +1,19 @@
 import sys
 import re
-import time
+import asyncio
 import requests
 
 try:
     import ipywidgets as widgets
     from IPython.display import display, clear_output
-    from playwright.sync_api import sync_playwright
+    from playwright.async_api import async_playwright
 except ImportError:
     import subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets", "playwright"])
     subprocess.check_call(["playwright", "install", "chromium", "--with-deps"])
     import ipywidgets as widgets
     from IPython.display import display, clear_output
-    from playwright.sync_api import sync_playwright
+    from playwright.async_api import async_playwright
 
 BASE_URL = "https://hdmn.cloud"
 CONFIG_URL = "https://safeclick.email/faq/vpn/vpn-installation-and-configuration/third-party-applications/wireguard-for-windows/"
@@ -72,12 +72,62 @@ def send_email_request(b):
                 timeout=10
             )
             res.encoding = 'utf-8'
-            if res.status_code == 200:
-                print("✅ Запрос отправлен! Проверь почту и скопируй код в Шаг 2.")
+            html = res.text
+
+            # Углубленная проверка ответа сервера
+            if "запрошен ранее" in html or "уже высылали" in html:
+                print("⚠️ Код на эту почту уже запрашивался ранее! Проверь ящик или возьми другую почту.")
+            elif "не подходит" in html or "одноразовые" in html:
+                print("❌ Данная почта не подходит для демо-периода (заблокирована сервисом).")
+            elif res.status_code == 200 and ("код" in html.lower() or "письмо" in html.lower() or "пути" in html.lower()):
+                print("✅ Код успешно отправлен! Проверь ящик и вставь код в Шаг 2.")
             else:
-                print(f"⚠️ Ошибка сервера: {res.status_code}")
+                print("⚠️ Ответ сервера получен, но статуса успеха нет. Возможно, почта отклонена.")
+                
         except Exception as e:
             print(f"❌ Ошибка сети: {e}")
+
+async def run_playwright_async(code, version, location):
+    print("🚀 Запускаем Headless Chromium (Playwright Async)...")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+
+        print("⏳ Загружаем страницу генератора...")
+        await page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
+
+        print("⏳ Вводим код доступа...")
+        input_field = page.locator("input[placeholder*='Код'], input[type='text']").first
+        await input_field.fill(code)
+
+        btn_continue = page.locator("button:has-text('Продолжить'), a:has-text('Продолжить')").first
+        await btn_continue.click()
+
+        print("⏳ Прохождение валидации (4 сек)...")
+        await asyncio.sleep(4)
+
+        selects = page.locator("select")
+        if await selects.count() >= 2:
+            await selects.nth(0).select_option(label=re.compile(version, re.I))
+            await selects.nth(1).select_option(label=re.compile(location, re.I))
+
+        print("⏳ Генерируем конфигурацию...")
+        btn_create = page.locator("button:has-text('Создать конфиг'), a:has-text('Создать конфиг')").first
+        await btn_create.click()
+
+        await asyncio.sleep(3)
+
+        config_box = page.locator("textarea").first
+        config_text = await config_box.input_value() or await config_box.inner_text()
+
+        if "[Interface]" in config_text or "PrivateKey" in config_text:
+            config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", config_text)
+            print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
+            print(config_text)
+        else:
+            print("⚠️ Не удалось извлечь конфиг. Проверь код доступа.")
+
+        await browser.close()
 
 def generate_config_request(b):
     with output_step2:
@@ -87,54 +137,11 @@ def generate_config_request(b):
             print("❌ Введи код из письма!")
             return
 
-        print("🚀 Запускаем Headless Chromium (Playwright)...")
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-
-                print("⏳ Загружаем страницу генератора...")
-                page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
-
-                print("⏳ Вводим код доступа...")
-                # Ввод кода в инпут
-                input_field = page.locator("input[placeholder*='Код'], input[type='text']").first
-                input_field.fill(code)
-
-                # Нажатие на кнопку "Продолжить"
-                btn_continue = page.locator("button:has-text('Продолжить'), a:has-text('Продолжить')").first
-                btn_continue.click()
-
-                print("⏳ Выполняем JS-валидацию (4 сек)...")
-                time.sleep(4)
-
-                # Выбор элементов из Dropdown, если они появились
-                selects = page.locator("select")
-                if selects.count() >= 2:
-                    selects.nth(0).select_option(label=re.compile(version_select.value, re.I))
-                    selects.nth(1).select_option(label=re.compile(location_select.value, re.I))
-
-                print("⏳ Нажимаем «Создать конфиг»...")
-                btn_create = page.locator("button:has-text('Создать конфиг'), a:has-text('Создать конфиг')").first
-                btn_create.click()
-
-                time.sleep(3)
-
-                # Достаем результат из textarea или предпросмотра
-                config_box = page.locator("textarea").first
-                config_text = config_box.input_value() or config_box.inner_text()
-
-                if "[Interface]" in config_text or "PrivateKey" in config_text:
-                    config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", config_text)
-                    print("\n🎉 ГОТОВЫЙ КОНФИГ:\n")
-                    print(config_text)
-                else:
-                    print("⚠️ Не удалось получить конфиг из формы. Проверь код.")
-
-                browser.close()
-
+            loop = asyncio.get_event_loop()
+            loop.create_task(run_playwright_async(code, version_select.value, location_select.value))
         except Exception as e:
-            print(f"❌ Ошибка Playwright: {e}")
+            print(f"❌ Ошибка запуска задачи: {e}")
 
 btn_send_email.on_click(send_email_request)
 btn_gen_config.on_click(generate_config_request)
