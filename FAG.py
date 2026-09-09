@@ -3,16 +3,26 @@ import re
 import time
 import requests
 
+# Проверка и установка зависимостей
 try:
     import ipywidgets as widgets
     from IPython.display import display, clear_output
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait, Select
+    from selenium.webdriver.support import expected_conditions as EC
 except ImportError:
     import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets"])
+    subprocess.check_call(["apt-get", "update", "-y", "-q"])
+    subprocess.check_call(["apt-get", "install", "-y", "-q", "chromium-chromedriver"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets", "selenium"])
     import ipywidgets as widgets
     from IPython.display import display, clear_output
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait, Select
+    from selenium.webdriver.support import expected_conditions as EC
 
-# Основные URL и заголовки
 BASE_URL = "https://hdmn.cloud"
 CONFIG_URL = "https://safeclick.email/faq/vpn/vpn-installation-and-configuration/third-party-applications/wireguard-for-windows/"
 
@@ -20,14 +30,12 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 }
 
-# --- ЭЛЕМЕНТЫ ИНТЕРФЕЙСА ---
+# --- ИНТЕРФЕЙС ---
 
-# Шаг 1: Запрос кода
 email_input = widgets.Text(placeholder="vash_mail@gmail.com", layout=widgets.Layout(width='280px'))
 btn_send_email = widgets.Button(description="1. Запросить код", button_style="primary", icon="paper-plane", layout=widgets.Layout(width='180px'))
 output_step1 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 
-# Шаг 2: Генерация конфига
 code_input = widgets.Text(placeholder="Вставь код из письма", layout=widgets.Layout(width='280px'))
 version_select = widgets.Dropdown(
     options=[
@@ -39,21 +47,21 @@ version_select = widgets.Dropdown(
 )
 location_select = widgets.Dropdown(
     options=[
-        ("Hungary, Budapest DEMO", "hu_bud_demo"),
-        ("Belgium, Brussels DEMO", "be_bru_demo"),
-        ("Greece, Thessaloniki DEMO", "gr_the_demo"),
-        ("Latvia, Riga DEMO", "lv_rig_demo"),
-        ("Netherlands, Amsterdam DEMO", "nl_ams_demo"),
-        ("Slovenia, Ljubljana DEMO", "si_lju_demo"),
-        ("United Kingdom, London DEMO", "gb_lon_demo")
+        ("Hungary, Budapest DEMO", "Hungary"),
+        ("Belgium, Brussels DEMO", "Belgium"),
+        ("Greece, Thessaloniki DEMO", "Greece"),
+        ("Latvia, Riga DEMO", "Latvia"),
+        ("Netherlands, Amsterdam DEMO", "Netherlands"),
+        ("Slovenia, Ljubljana DEMO", "Slovenia"),
+        ("United Kingdom, London DEMO", "United Kingdom")
     ],
-    value="hu_bud_demo",
+    value="Hungary",
     layout=widgets.Layout(width='280px')
 )
 btn_gen_config = widgets.Button(description="2. Создать конфиг", button_style="success", icon="key", layout=widgets.Layout(width='180px'))
 output_step2 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 
-# --- ЛОГИКА ЗАПРОСОВ ---
+# --- ЛОГИКА ---
 
 def send_email_request(b):
     with output_step1:
@@ -87,63 +95,73 @@ def generate_config_request(b):
             print("❌ Введи код из письма!")
             return
 
-        print("⏳ Этап 1/2: Передаем код доступа на страницу...")
+        print("⏳ Настраиваем фоновый браузер Chrome...")
+        
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        
+        driver = None
         try:
-            session = requests.Session()
-            session.headers.update(HEADERS)
-            
-            # Эмуляция ввода кода на странице
-            init_res = session.post(
-                CONFIG_URL,
-                data={"code": code, "action": "check_code"},
-                timeout=10
-            )
-            
-            # Пауза 3 секунды, пока сервис "проверяет" код
-            print("⏳ Проверка кода сайтом (ожидание 3 сек)...")
-            time.sleep(3)
+            driver = webdriver.Chrome(options=chrome_options)
+            driver.get(CONFIG_URL)
+            wait = WebDriverWait(driver, 15)
 
-            print("⏳ Этап 2/2: Запрашиваем конфиг AmneziaWG...")
-            payload = {
-                "code": code,
-                "version": version_select.value,
-                "server": location_select.value,
-                "generate": "1"
-            }
-            
-            gen_res = session.post(CONFIG_URL, data=payload, timeout=12)
-            gen_res.encoding = 'utf-8'
+            print("⏳ Находим поле кода и жмем «Продолжить»...")
+            input_box = wait.until(EC.presence_of_element_locator((By.XPATH, "//input[contains(@placeholder, 'Код доступа')] | //input[@type='text']")))
+            input_box.clear()
+            input_box.send_keys(code)
 
-            # Если вернулся полный конфиг
-            if gen_res.status_code == 200 and ("Interface" in gen_res.text or "PrivateKey" in gen_res.text):
-                config_text = gen_res.text
+            btn_continue = driver.find_element(By.XPATH, "//button[contains(text(), 'Продолжить')] | //a[contains(text(), 'Продолжить')]")
+            btn_continue.click()
+
+            print("⏳ Ждем появления селекторов (3 сек)...")
+            time.sleep(3.5)
+
+            # Выбор дропдаунов на JS-странице
+            selects = driver.find_elements(By.TAG_NAME, "select")
+            if len(selects) >= 2:
+                # 1. Версия
+                sel_ver = Select(selects[0])
+                for opt in sel_ver.options:
+                    if version_select.value in opt.text:
+                        sel_ver.select_by_visible_text(opt.text)
+                        break
                 
-                # Замена AllowedIPs для обхода
-                config_text = re.sub(
-                    r"AllowedIPs\s*=.*",
-                    "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1",
-                    config_text
-                )
-                
+                # 2. Локация
+                sel_loc = Select(selects[1])
+                for opt in sel_loc.options:
+                    if location_select.value in opt.text:
+                        sel_loc.select_by_visible_text(opt.text)
+                        break
+
+            btn_create = driver.find_element(By.XPATH, "//button[contains(text(), 'Создать конфиг')] | //a[contains(text(), 'Создать конфиг')]")
+            btn_create.click()
+
+            print("⏳ Сборка конфига...")
+            time.sleep(2)
+
+            textarea = wait.until(EC.presence_of_element_locator((By.TAG_NAME, "textarea")))
+            config_text = textarea.get_attribute("value") or textarea.text
+
+            if "Interface" in config_text or "PrivateKey" in config_text:
+                config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", config_text)
                 print("🎉 ГОТОВЫЙ КОНФИГ:\n")
                 print(config_text)
             else:
-                # Если сырой текст конфига спрятан в теге <textarea> или <pre>
-                match = re.search(r"\[Interface\][\s\S]*?(?=\n\n|\Z|</textarea>|</pre>)", gen_res.text)
-                if match:
-                    config_text = match.group(0)
-                    config_text = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", config_text)
-                    print("🎉 ГОТОВЫЙ КОНФИГ:\n")
-                    print(config_text)
-                else:
-                    print("⚠️ Не удалось получить конфиг. Проверь верность кода доступа.")
+                print("⚠️ Поле конфига пустое. Проверь верность кода доступа.")
+
         except Exception as e:
-            print(f"❌ Ошибка при генерации: {e}")
+            print(f"❌ Ошибка эмуляции браузера: {e}")
+        finally:
+            if driver:
+                driver.quit()
 
 btn_send_email.on_click(send_email_request)
 btn_gen_config.on_click(generate_config_request)
 
-# --- ВЕРСТКА С РАЗДЕЛЬНЫМИ ВЫВОДАМИ ---
+# --- ВЕРСТКА ---
 
 header_widget = widgets.HTML("""
 <div style="background-color: #1e1e2e; padding: 15px; border-radius: 8px; font-family: sans-serif; margin-bottom: 15px;">
