@@ -2,50 +2,57 @@ import sys
 import re
 import requests
 
-# Проверяем и устанавливаем ipywidgets для интерактивного интерфейса
 try:
     import ipywidgets as widgets
-    from IPython.display import display, clear_output
+    from IPython.display import display, clear_output, HTML
 except ImportError:
     import subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "ipywidgets"])
     import ipywidgets as widgets
-    from IPython.display import display, clear_output
+    from IPython.display import display, clear_output, HTML
 
+# Основные параметры
 BASE_URL = "https://hdmn.cloud"
-CONFIG_GEN_URL = "https://safeclick.email/faq/vpn/vpn-installation-and-configuration/third-party-applications/wireguard-for-windows/"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": f"{BASE_URL}/ru/demo/"
+}
 
-# --- Виджеты интерфейса ---
-email_input = widgets.Text(description="Почта:", placeholder="your_email@gmail.com")
-btn_send_email = widgets.Button(description="1. Запросить код", button_style="primary", icon="paper-plane")
+# --- ЭЛЕМЕНТЫ ИНТЕРФЕЙСА ---
 
-code_input = widgets.Text(description="Код:", placeholder="Вставь код из письма")
+# Шаг 1: Запрос кода
+email_input = widgets.Text(placeholder="vash_mail@gmail.com", layout=widgets.Layout(width='280px'))
+btn_send_email = widgets.Button(description="1. Запросить код", button_style="primary", icon="paper-plane", layout=widgets.Layout(width='180px'))
+
+# Шаг 2: Генерация конфига
+code_input = widgets.Text(placeholder="Вставь код из письма", layout=widgets.Layout(width='280px'))
 version_select = widgets.Dropdown(
     options=[
-        ("С обфускацией (AmneziaWG 2.0 client)", "2.0"),
-        ("С обфускацией (AmneziaWG 1.0 client)", "1.0")
+        ("AmneziaWG 2.0 (С обфускацией)", "amnezia_2"),
+        ("AmneziaWG 1.0 (С обфускацией)", "amnezia_1")
     ],
-    value="2.0",
-    description="Версия:"
+    value="amnezia_2",
+    layout=widgets.Layout(width='280px')
 )
 location_select = widgets.Dropdown(
     options=[
-        ("Hungary, Budapest DEMO", "hu_bud_demo"),
-        ("Belgium, Brussels DEMO", "be_bru_demo"),
-        ("Greece, Thessaloniki DEMO", "gr_the_demo"),
-        ("Latvia, Riga DEMO", "lv_rig_demo"),
-        ("Netherlands, Amsterdam DEMO", "nl_ams_demo"),
-        ("Slovenia, Ljubljana DEMO", "si_lju_demo"),
-        ("United Kingdom, London DEMO", "gb_lon_demo")
+        ("Hungary, Budapest DEMO", "hu"),
+        ("Belgium, Brussels DEMO", "be"),
+        ("Greece, Thessaloniki DEMO", "gr"),
+        ("Latvia, Riga DEMO", "lv"),
+        ("Netherlands, Amsterdam DEMO", "nl"),
+        ("Slovenia, Ljubljana DEMO", "si"),
+        ("United Kingdom, London DEMO", "gb")
     ],
-    value="hu_bud_demo",
-    description="Локация:"
+    value="hu",
+    layout=widgets.Layout(width='280px')
 )
-btn_gen_config = widgets.Button(description="2. Создать конфиг", button_style="success", icon="key")
+btn_gen_config = widgets.Button(description="2. Создать конфиг", button_style="success", icon="key", layout=widgets.Layout(width='180px'))
 
-output_area = widgets.Output()
+# Область вывода логов и результата
+output_area = widgets.Output(layout=widgets.Layout(margin='10px 0 0 0'))
 
-# --- Логика запросов ---
+# --- ЛОГИКА СЕРИАЛИЗАЦИИ И ЗАПРОСОВ ---
 
 def send_email_request(b):
     with output_area:
@@ -60,15 +67,16 @@ def send_email_request(b):
             res = requests.post(
                 f"{BASE_URL}/ru/demo/success/",
                 data={"demo_mail": email},
+                headers=HEADERS,
                 timeout=10
             )
             res.encoding = 'utf-8'
-            if res.status_code == 200 and "Ваш код выслан" in res.text:
-                print("✅ Код отправлен! Проверь ящик, скопируй его и вставь в поле ниже.")
+            if res.status_code == 200 and ("Ваш код" in res.text or "уже в пути" in res.text):
+                print("✅ Код отправлен! Проверь почтовый ящик, вставь код в поле ниже.")
             else:
-                print("⚠️ Ошибка отправки или почта уже использовалась.")
+                print("⚠️ Сайт отклонил запрос. Возможно, почта уже использовалась.")
         except Exception as e:
-            print(f"❌ Сбой сети: {e}")
+            print(f"❌ Ошибка сети: {e}")
 
 def generate_config_request(b):
     with output_area:
@@ -78,49 +86,68 @@ def generate_config_request(b):
             print("❌ Введи код из письма!")
             return
 
-        print("⏳ Генерируем конфиг WireGuard/AmneziaWG...")
+        print("⏳ Подключаемся к серверу генерации конфига...")
         try:
+            # Отправка формы получения конфигурации
             payload = {
                 "code": code,
-                "version": version_select.value,
-                "server": location_select.value
+                "preset": version_select.value,
+                "server": location_select.value,
+                "download": "1"
             }
-            res = requests.post(CONFIG_GEN_URL, data=payload, timeout=12)
+            
+            res = requests.post(f"{BASE_URL}/ru/demo/vpn-config/", data=payload, headers=HEADERS, timeout=12)
             res.encoding = 'utf-8'
 
-            if res.status_code == 200 and "Interface" in res.text:
-                # Меняем строчку AllowedIPs на нужный обход
+            if res.status_code == 200 and ("[Interface]" in res.text or "PrivateKey" in res.text):
                 config_text = res.text
+                
+                # Подмена AllowedIPs для полного обхода
                 config_text = re.sub(
                     r"AllowedIPs\s*=.*",
                     "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1",
                     config_text
                 )
+                
                 print("🎉 ГОТОВЫЙ КОНФИГ:\n")
                 print(config_text)
             else:
-                print("⚠️ Не удалось сформировать конфиг. Проверь правильность кода доступа.")
+                print("⚠️ Не удалось получить конфиг. Проверь верность кода или выбранную локацию.")
         except Exception as e:
-            print(f"❌ Ошибка при генерации конфига: {e}")
+            print(f"❌ Ошибка при отправке: {e}")
 
 btn_send_email.on_click(send_email_request)
 btn_gen_config.on_click(generate_config_request)
 
-# --- Отрисовка формы ---
-print("==================================================")
-print("«FREE ACCESS GRABBER» (FAG) — AmneziaWG Generator")
-print("==================================================\n")
+# --- ВЕРСТКА КРАСИВОГО ИНТЕРФЕЙСА ---
 
-display(email_input, btn_send_email)
-print("-" * 50)
-display(code_input, version_select, location_select, btn_gen_config)
-print("-" * 50)
-display(output_area)
+header_html = HTML("""
+<div style="background-color: #1e1e2e; padding: 15px; border-radius: 8px; font-family: sans-serif; margin-bottom: 15px;">
+    <h2 style="color: #cba6f7; margin: 0 0 5px 0;">🚀 FREE ACCESS GRABBER (FAG)</h2>
+    <p style="color: #a6adc8; margin: 0; font-size: 13px;">Генератор конфигураций AmneziaWG / WireGuard</p>
+</div>
+""")
 
-# Напоминалка в самом конце выполнения
-print("\n" + "!" * 50)
-print("📌 ВАЖНО ПОСЛЕ ЗАВЕРШЕНИЯ РАБОТЫ:")
-print("1. Нажми иконку корзины 🗑️ у ячейки выполнения.")
-print("2. Перейди в меню: Среда выполнения 🡢 Отключиться от среды выполнения и удалить её.")
-print("Это полностью затрет логи и защитит аккаунт Google от бана!")
-print("!" * 50)
+step1_box = widgets.VBox([
+    HTML("<b>Шаг 1: Запрос тестового кода</b>"),
+    widgets.HBox([email_input, btn_send_email])
+], layout=widgets.Layout(padding='10px', border='1px solid #313244', border_radius='6px', margin='0 0 10px 0'))
+
+step2_box = widgets.VBox([
+    HTML("<b>Шаг 2: Сборка конфига AmneziaWG</b>"),
+    widgets.HBox([code_input, version_select]),
+    widgets.HBox([location_select, btn_gen_config])
+], layout=widgets.Layout(padding='10px', border='1px solid #313244', border_radius='6px'))
+
+warning_html = HTML("""
+<div style="background-color: #311b1b; border-left: 4px solid #f38ba8; padding: 10px 15px; border-radius: 4px; margin-top: 15px; font-family: sans-serif;">
+    <b style="color: #f38ba8;">📌 Важное при завершении:</b>
+    <ul style="color: #cdd6f4; margin: 5px 0 0 0; padding-left: 20px; font-size: 12px;">
+        <li>Нажми иконку корзины <b>🗑️</b> у ячейки.</li>
+        <li>Выбери: <b>Среда выполнения 🡢 Отключиться от среды выполнения и удалить её</b> (защитит Google-аккаунт).</li>
+    </ul>
+</div>
+""")
+
+# Отрисовка приложения
+display(header_html, step1_box, step2_box, output_area, warning_html)
