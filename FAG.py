@@ -60,6 +60,7 @@ output_step2 = widgets.Output(layout=widgets.Layout(margin='5px 0 0 0'))
 
 def send_email_request(b):
     with output_step1:
+        output_step1.clear_output()
         email = email_input.value.strip()
         if not email:
             print("📭 Введите почту!")
@@ -67,24 +68,40 @@ def send_email_request(b):
         
         print("📨 Отправляем запрос на получение кода...")
         try:
-            res = requests.post(
-                f"{BASE_URL}/ru/demo/success/",
-                data={"demo_mail": email},
-                headers={**HEADERS, "Referer": f"{BASE_URL}/ru/demo/"},
-                timeout=10
-            )
-            res.encoding = 'utf-8'
-            html = res.text
+            # Используем логику из hidecode.py
+            session = requests.Session()
+            session.headers.update(HEADERS)
+            
+            url_demo = f"{BASE_URL}/ru/demo/"
+            
+            # 1. Сначала GET запрос
+            res_get = session.get(url_demo, timeout=10)
+            
+            if res_get.status_code == 200:
+                # 2. Затем POST запрос
+                url_success = f"{BASE_URL}/ru/demo/success/"
+                res_post = session.post(
+                    url_success, 
+                    data={"demo_mail": email},
+                    headers={"Referer": url_demo},
+                    timeout=10
+                )
+                res_post.encoding = 'utf-8'
+                html = res_post.text
 
-            if "запрошен ранее" in html or "уже высылали" in html:
-                print("📛 Код на эту почту уже запрашивался ранее!")
-            elif "не подходит" in html or "одноразовые" in html:
-                print("⛔ Данная почта заблокирована сервисом.")
-            elif res.status_code == 200:
-                print("📬 Код отправлен! Проверь ящик.")
+                # 3. Строгая проверка результата как в hidecode.py
+                if res_post.status_code == 200 and 'Ваш код выслан на почту' in html:
+                    print("✅ Ваш код уже в пути! Проверьте свой почтовый ящик.")
+                elif res_post.status_code == 200 and ('не подходит' in html or 'одноразовые' in html):
+                    print("⚠️ Указанная почта не подходит для получения тестового периода.")
+                elif "запрошен ранее" in html or "уже высылали" in html:
+                    print("📛 Код на эту почту уже запрашивался ранее!")
+                else:
+                    print("⛔ Сервер не подтвердил отправку. Возможно, включилась защита от ботов (Cloudflare).")
             else:
-                print(f"⚠️ Статус сервера: {res.status_code}")
-        except Exception as e:
+                print(f"❌ Ошибка доступа к странице демо. Код ответа: {res_get.status_code}")
+
+        except requests.RequestException as e:
             print(f"🌐❌ Ошибка сети: {e}")
 
 async def run_browser_automation(code, version_val, location_val):
@@ -157,14 +174,12 @@ async def run_browser_automation(code, version_val, location_val):
                 config_text = await page.evaluate("() => document.body.innerText")
 
             if "[Interface]" in config_text and "[Peer]" in config_text:
-                # Извлекаем полный конфиг от [Interface] до конца секции [Peer]
                 match = re.search(r"\[Interface\][\s\S]*?\[Peer\][\s\S]*?(?=\n\n\n|\Z|</textarea>)", config_text)
                 final_config = match.group(0).strip() if match else config_text.strip()
                 final_config = re.sub(r"AllowedIPs\s*=.*", "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1", final_config)
 
                 print("🔐 Конфигурация успешно получена!")
                 
-                # HTML-блок с кнопкой копирования без очистки логов
                 html_code = f"""
                 <div style="margin-top: 15px; font-family: monospace;">
                     <div style="display: flex; justify-content: space-between; align-items: center; background: #282a36; padding: 8px 12px; border-radius: 6px 6px 0 0; color: #f8f8f2;">
@@ -189,6 +204,7 @@ async def run_browser_automation(code, version_val, location_val):
 
 def generate_config_request(b):
     with output_step2:
+        output_step2.clear_output()
         code = code_input.value.strip()
         if not code:
             print("❌ Введи код из письма!")
