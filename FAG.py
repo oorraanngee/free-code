@@ -115,10 +115,25 @@ async def run_browser_automation(code, version_val, location_val):
             print("⏬ Загружаем страницу...")
             await page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
 
+            # --- НАЧАЛО БЛОКА ОБРАБОТКИ COOKIE ---
+            print("🍪 Проверяем наличие баннера с куками...")
+            # Ищем кнопку, игнорируя регистр (accept all / ACCEPT ALL)
+            accept_btn = page.locator("text=/accept all/i").first
+            try:
+                # Ждем появления кнопки максимум 3 секунды
+                await accept_btn.wait_for(state="visible", timeout=3000)
+                print("🔹 Баннер найден! Нажимаем 'Accept All'...")
+                await accept_btn.click()
+                # Ждем секунду, чтобы анимация закрытия баннера успела завершиться
+                await page.wait_for_timeout(1000) 
+            except:
+                print("🔍 Баннер не появился, продолжаем работу...")
+            # --- КОНЕЦ БЛОКА ОБРАБОТКИ COOKIE ---
+
             print("🔓 Раскрываем вкладку «Основной этап»...")
             tab_accordion = page.locator("text=/Основной этап/i").first
             if await tab_accordion.count() > 0:
-                await tab_accordion.click()
+                await tab_accordion.click() # Теперь клик пройдет без проблем
                 await page.wait_for_timeout(1000)
 
             print("🪪 Вводим код...")
