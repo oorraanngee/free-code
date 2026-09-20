@@ -102,7 +102,7 @@ def send_email_request(b):
                 print(f"❌ Ошибка доступа к странице демо. Код ответа: {res_get.status_code}")
 
         except requests.RequestException as e:
-            print(f"🌐❌ Ошибка сети: {e}")
+            print(f"📵 Ошибка сети: {e}")
 
 async def run_browser_automation(code, version_val, location_val):
     print("🌐 Запускаем Headless Chromium...")
@@ -116,7 +116,7 @@ async def run_browser_automation(code, version_val, location_val):
             await page.goto(CONFIG_URL, wait_until="networkidle", timeout=30000)
 
             # --- НАЧАЛО БЛОКА ОБРАБОТКИ COOKIE ---
-            print("🍪 Проверяем наличие баннера с куками...")
+            print("🍪 Проверяем наличие баннера с cookie...")
             # Ищем кнопку, игнорируя регистр (accept all / ACCEPT ALL)
             accept_btn = page.locator("text=/accept all/i").first
             try:
